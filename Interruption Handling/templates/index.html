@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Teacher Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #output { height: 300px; border: 1px solid #ccc; padding: 10px; overflow-y: auto; margin-bottom: 10px; }
+        button { padding: 10px 15px; margin-right: 10px; cursor: pointer; }
+        .teacher { color: blue; }
+        .student { color: green; }
+        .system { color: gray; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>AI Teacher Demonstration</h1>
+    <div id="output"></div>
+    <button id="startBtn">Start Lesson</button>
+    <button id="interruptBtn" disabled>Interrupt</button>
+    <div id="questionPanel" style="display: none; margin-top: 10px;">
+        <input type="text" id="questionInput" placeholder="Ask your question...">
+        <button id="askBtn">Ask</button>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const startBtn = document.getElementById('startBtn');
+        const interruptBtn = document.getElementById('interruptBtn');
+        const questionPanel = document.getElementById('questionPanel');
+        const questionInput = document.getElementById('questionInput');
+        const askBtn = document.getElementById('askBtn');
+        
+        let ws;
+        let isTeaching = false;
+
+        function addMessage(speaker, text) {
+            output.innerHTML += `<p class="${speaker}"><strong>${speaker}:</strong> ${text}</p>`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        startBtn.addEventListener('click', async () => {
+            addMessage('system', 'Lesson starting...');
+            ws = new WebSocket(`ws://${window.location.host}/teach`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'teach') {
+                    addMessage('teacher', data.text);
+                    isTeaching = true;
+                    interruptBtn.disabled = false;
+                }
+                else if (data.type === 'interrupted') {
+                    addMessage('teacher', data.text);
+                    questionPanel.style.display = 'block';
+                    isTeaching = false;
+                }
+                else if (data.type === 'answer') {
+                    addMessage('teacher', data.text);
+                }
+                else if (data.type === 'complete') {
+                    addMessage('system', 'Lesson completed');
+                    interruptBtn.disabled = true;
+                    isTeaching = false;
+                }
+            };
+            
+            ws.onopen = () => {
+                startBtn.disabled = true;
+                addMessage('system', 'Connected to teacher');
+            };
+            
+            ws.onclose = () => {
+                addMessage('system', 'Disconnected');
+                startBtn.disabled = false;
+            };
+        });
+
+        interruptBtn.addEventListener('click', () => {
+            if (isTeaching && ws) {
+                ws.send(JSON.stringify({ type: 'interrupt' }));
+                interruptBtn.disabled = true;
+            }
+        });
+
+        askBtn.addEventListener('click', () => {
+            const question = questionInput.value.trim();
+            if (question && ws) {
+                addMessage('student', question);
+                ws.send(JSON.stringify({ type: 'question', text: question }));
+                questionInput.value = '';
+                questionPanel.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
