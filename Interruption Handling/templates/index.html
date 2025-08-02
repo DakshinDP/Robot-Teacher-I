@@ -5,36 +5,80 @@
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         #output { height: 300px; border: 1px solid #ccc; padding: 10px; overflow-y: auto; margin-bottom: 10px; }
-        button { padding: 10px 15px; margin-right: 10px; cursor: pointer; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; min-width: 120px; }
         .teacher { color: blue; }
         .student { color: green; }
         .system { color: gray; font-style: italic; }
+        .interrupt-btn { background-color: #ffcccc; }
+        .resume-btn { background-color: #ccffcc; }
+        .action-panel { margin: 10px 0; padding: 10px; border: 1px dashed #ccc; border-radius: 5px; }
+        .hidden { display: none; }
+        #interruptPanel { margin-top: 15px; }
+        input[type="text"] { padding: 8px; width: 70%; margin-right: 5px; }
     </style>
 </head>
 <body>
     <h1>AI Teacher Demonstration</h1>
     <div id="output"></div>
     <button id="startBtn">Start Lesson</button>
-    <button id="interruptBtn" disabled>Interrupt</button>
-    <div id="questionPanel" style="display: none; margin-top: 10px;">
-        <input type="text" id="questionInput" placeholder="Ask your question...">
-        <button id="askBtn">Ask</button>
+    
+    <div id="interruptPanel" class="hidden">
+        <h3>Interruptions:</h3>
+        <button class="interrupt-btn" data-type="doubt">Student Doubt</button>
+        <button class="interrupt-btn" data-type="noise">Classroom Noise</button>
+        <button class="interrupt-btn" data-type="late">Late Arrival</button>
+        <button class="interrupt-btn" data-type="intruder">Intruder</button>
+    </div>
+    
+    <div id="doubtPanel" class="action-panel hidden">
+        <input type="text" id="doubtInput" placeholder="Enter your question..." autofocus>
+        <button id="submitDoubt">Submit</button>
+        <button id="cancelDoubt">Cancel</button>
+    </div>
+    
+    <div id="intruderPanel" class="action-panel hidden">
+        <p>Intruder purpose:</p>
+        <button data-intruder="announcement">Announcement</button>
+        <button data-intruder="student">Student Need</button>
+        <button id="cancelIntruder">Cancel</button>
+    </div>
+    
+    <div id="announcementPanel" class="action-panel hidden">
+        <p>Announcement in progress...</p>
+        <button id="completeAnnouncement">Done</button>
+    </div>
+    
+    <div id="resumePanel" class="action-panel hidden">
+        <button id="resumeBtn" class="resume-btn">Resume Lesson</button>
     </div>
 
     <script>
         const output = document.getElementById('output');
         const startBtn = document.getElementById('startBtn');
-        const interruptBtn = document.getElementById('interruptBtn');
-        const questionPanel = document.getElementById('questionPanel');
-        const questionInput = document.getElementById('questionInput');
-        const askBtn = document.getElementById('askBtn');
+        const interruptPanel = document.getElementById('interruptPanel');
+        const doubtPanel = document.getElementById('doubtPanel');
+        const intruderPanel = document.getElementById('intruderPanel');
+        const announcementPanel = document.getElementById('announcementPanel');
+        const resumePanel = document.getElementById('resumePanel');
         
         let ws;
         let isTeaching = false;
+        let isPaused = false;
 
         function addMessage(speaker, text) {
             output.innerHTML += `<p class="${speaker}"><strong>${speaker}:</strong> ${text}</p>`;
             output.scrollTop = output.scrollHeight;
+        }
+
+        function showPanel(panel) {
+            document.querySelectorAll('.action-panel').forEach(p => p.classList.add('hidden'));
+            if (panel) panel.classList.remove('hidden');
+        }
+
+        function enableInterruptButtons(enable) {
+            document.querySelectorAll('.interrupt-btn').forEach(btn => {
+                btn.disabled = !enable;
+            });
         }
 
         startBtn.addEventListener('click', async () => {
@@ -47,20 +91,55 @@
                 if (data.type === 'teach') {
                     addMessage('teacher', data.text);
                     isTeaching = true;
-                    interruptBtn.disabled = false;
+                    isPaused = false;
+                    interruptPanel.classList.remove('hidden');
+                    enableInterruptButtons(true);
                 }
-                else if (data.type === 'interrupted') {
+                else if (data.type === 'resumed') {
                     addMessage('teacher', data.text);
-                    questionPanel.style.display = 'block';
-                    isTeaching = false;
+                    isTeaching = true;
+                    isPaused = false;
+                    interruptPanel.classList.remove('hidden');
+                    enableInterruptButtons(true);
+                    showPanel(null);
                 }
-                else if (data.type === 'answer') {
+                else if (data.type === 'doubt_response') {
+                    addMessage('teacher', data.text);
+                    isPaused = true;
+                    interruptPanel.classList.add('hidden');
+                    if (data.show_resume) showPanel(resumePanel);
+                }
+                else if (data.type === 'noise_response') {
+                    addMessage('teacher', data.text);
+                    isPaused = true;
+                    interruptPanel.classList.add('hidden');
+                    showPanel(resumePanel);
+                }
+                else if (data.type === 'late_response') {
+                    addMessage('teacher', data.text);
+                    isPaused = true;
+                    interruptPanel.classList.add('hidden');
+                    showPanel(resumePanel);
+                }
+                else if (data.type === 'intruder_response') {
+                    addMessage('teacher', data.text);
+                    isPaused = true;
+                    interruptPanel.classList.add('hidden');
+                    if (data.action_required) {
+                        showPanel(announcementPanel);
+                    } else {
+                        showPanel(resumePanel);
+                    }
+                }
+                else if (data.type === 'recap') {
                     addMessage('teacher', data.text);
                 }
                 else if (data.type === 'complete') {
                     addMessage('system', 'Lesson completed');
-                    interruptBtn.disabled = true;
+                    interruptPanel.classList.add('hidden');
                     isTeaching = false;
+                    isPaused = false;
+                    enableInterruptButtons(false);
                 }
             };
             
@@ -72,23 +151,91 @@
             ws.onclose = () => {
                 addMessage('system', 'Disconnected');
                 startBtn.disabled = false;
+                interruptPanel.classList.add('hidden');
+                showPanel(null);
+                isTeaching = false;
+                isPaused = false;
+                enableInterruptButtons(false);
             };
         });
 
-        interruptBtn.addEventListener('click', () => {
-            if (isTeaching && ws) {
-                ws.send(JSON.stringify({ type: 'interrupt' }));
-                interruptBtn.disabled = true;
+        // Interrupt buttons
+        document.querySelectorAll('.interrupt-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.dataset.type;
+                
+                if (type === 'doubt') {
+                    showPanel(doubtPanel);
+                    document.getElementById('doubtInput').focus();
+                } 
+                else if (type === 'intruder') {
+                    showPanel(intruderPanel);
+                }
+                else {
+                    ws.send(JSON.stringify({ 
+                        type: 'interrupt', 
+                        subtype: type 
+                    }));
+                    interruptPanel.classList.add('hidden');
+                    enableInterruptButtons(false);
+                }
+            });
+        });
+
+        // Submit doubt
+        document.getElementById('submitDoubt').addEventListener('click', () => {
+            const question = document.getElementById('doubtInput').value.trim();
+            if (question) {
+                ws.send(JSON.stringify({
+                    type: 'interrupt',
+                    subtype: 'doubt',
+                    text: question
+                }));
+                document.getElementById('doubtInput').value = '';
+                showPanel(null);
             }
         });
 
-        askBtn.addEventListener('click', () => {
-            const question = questionInput.value.trim();
-            if (question && ws) {
-                addMessage('student', question);
-                ws.send(JSON.stringify({ type: 'question', text: question }));
-                questionInput.value = '';
-                questionPanel.style.display = 'none';
+        // Cancel doubt
+        document.getElementById('cancelDoubt').addEventListener('click', () => {
+            document.getElementById('doubtInput').value = '';
+            showPanel(null);
+            interruptPanel.classList.remove('hidden');
+        });
+
+        // Intruder type selection
+        document.querySelectorAll('#intruderPanel button[data-intruder]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                ws.send(JSON.stringify({
+                    type: 'interrupt',
+                    subtype: 'intruder',
+                    intruder_type: btn.dataset.intruder
+                }));
+                showPanel(null);
+            });
+        });
+
+        // Cancel intruder
+        document.getElementById('cancelIntruder').addEventListener('click', () => {
+            showPanel(null);
+            interruptPanel.classList.remove('hidden');
+        });
+
+        // Complete announcement
+        document.getElementById('completeAnnouncement').addEventListener('click', () => {
+            showPanel(resumePanel);
+        });
+
+        // Resume class
+        document.getElementById('resumeBtn').addEventListener('click', () => {
+            ws.send(JSON.stringify({ type: 'resume' }));
+            showPanel(null);
+        });
+
+        // Handle Enter key in doubt input
+        document.getElementById('doubtInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('submitDoubt').click();
             }
         });
     </script>
